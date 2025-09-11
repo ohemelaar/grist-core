@@ -392,6 +392,7 @@ export class DocWorkerMap implements IDocWorkerMap {
    *
    */
   public async assignDocWorker(docId: string, workerId?: string): Promise<DocStatus> {
+    log.info(`DocWorkerMap.assignDocWorker ${docId} ${workerId}`);
     if (docId === 'import') {
       const lock = await this._redlock.lock(`workers-lock`, LOCK_TIMEOUT);
       try {
@@ -399,6 +400,7 @@ export class DocWorkerMap implements IDocWorkerMap {
         if (!_workerId) { throw new Error('no doc worker available'); }
         const docWorker = await this._client.hgetallAsync(`worker-${_workerId}`) as DocWorkerInfo|null;
         if (!docWorker) { throw new Error('no doc worker contact info available'); }
+        log.info(`DocWorkerMap.assignDocWorker ${docId} assigned to ${docWorker}`);
         return {
           docMD5: null,
           docWorker,
@@ -412,6 +414,7 @@ export class DocWorkerMap implements IDocWorkerMap {
     // Check if a DocWorker is already assigned; if so return result immediately
     // without locking.
     let docStatus = await this.getDocWorker(docId);
+    log.info(`DocWorkerMap.assignDocWorker ${docId} already assigned to ${docStatus.docWorker}`);
     if (docStatus) { return docStatus; }
 
     // No assignment yet, so let's lock and set an assignment up.
@@ -422,6 +425,7 @@ export class DocWorkerMap implements IDocWorkerMap {
       // in the meantime.  Return immediately if it has.
       const docAndChecksum = await this._getDocAndChecksum(docId);
       docStatus = docAndChecksum.doc;
+      log.info(`DocWorkerMap.assignDocWorker ${docId} assigned since locking to ${docStatus.docWorker}`);
       if (docStatus) { return docStatus; }
 
       if (!workerId) {
@@ -465,6 +469,7 @@ export class DocWorkerMap implements IDocWorkerMap {
         .setex(`doc-${docId}-checksum`, CHECKSUM_TTL_MSEC / 1000.0, checksum || 'null')
         .execAsync();
       if (!result) { throw new Error('failed to store new assignment'); }
+      log.info(`DocWorkerMap.assignDocWorker ${docId} assigned to ${docStatus.docWorker}`);
       return newDocStatus;
     } finally {
       await lock.unlock();
@@ -629,6 +634,7 @@ export class DocWorkerMap implements IDocWorkerMap {
    * the complement of the load on a worker (`0.0` to `1.0` inclusive).
    */
   private async _getAvailableWorkerIdByLoad(group: string): Promise<string|null> {
+    log.debug(`DocWorkerMap._getAvailableWorkerIdByLoad ${group}`);
     const script = `
       local workers = redis.call("ZRANGE", KEYS[1], 0, -1, "WITHSCORES")
       if #workers == 0 then
@@ -674,6 +680,7 @@ export class DocWorkerMap implements IDocWorkerMap {
     `;
     const keyCountAndValues = [1, `workers-available-by-load-${group}`];
     const args = [Math.random()];
+    log.debug(`DocWorkerMap._getAvailableWorkerIdByLoad random value is ${args[0]}`);
     return await this._client.evalAsync(
       script,
       ...keyCountAndValues,
